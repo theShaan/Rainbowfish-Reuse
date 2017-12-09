@@ -63,7 +63,7 @@ make
 
 ## Usage
 
-./cosmo-build <color_file> <de_bruijn_graph_file> <no_of_colors>
+./cosmo-build -r <color_file> <de_bruijn_graph_file> <no_of_colors>
 
 The output will <color_file>.reuse
 
