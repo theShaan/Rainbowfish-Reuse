@@ -2,11 +2,11 @@
 
 This is a project for CIS6930 Big Data for Biological Applications.
 The project website is at https://cis6930.wixsite.com/group3 along with the relevant literature.
-The project is based on VARI, which can be found at : https://github.com/cosmo-team/cosmo/tree/VARI
+
 
 ## Compilation Instructions
 The project is based on VARI, which can be found at : https://github.com/cosmo-team/cosmo/tree/VARI
-The 3rd party packages must be installed according to the instructions on the above website.
+The 3rd party packages must be installed according to the instructions on the website.
 
 ```sh
 # Grab the code:
@@ -77,14 +77,14 @@ git clone https://github.com/theShaan/e_coli6
 cd e_coli6
 
 # Use KMC2 to k-mer count the FASTA (*.fna) files
-$ mkdir kmc_temp
-$ ls -1 --color=no *.fna |xargs -l -i  ../3rd_party_src/KMC/bin/kmc -ci0 -fm -k32 -cs300 {} {}_kmc kmc_temp
-$ ls -1 --color=no *.fna |xargs -l -i  ../3rd_party_src/KMC/bin sort {}_kmc {}_kmc_sorted_kmc.kmc
-$ ls -1 --color=no *.fna |xargs -l -i echo "{}_kmc_sorted_kmc.kmc" >ecoli6_kmc2_list
+mkdir kmc_temp
+ls -1 --color=no *.fna |xargs -l -i  ../3rd_party_src/KMC/bin/kmc -ci0 -fm -k32 -cs300 {} {}_kmc kmc_temp
+ls -1 --color=no *.fna |xargs -l -i  ../3rd_party_src/KMC/bin sort {}_kmc {}_kmc_sorted_kmc.kmc
+ls -1 --color=no *.fna |xargs -l -i echo "{}_kmc_sorted_kmc.kmc" >ecoli6_kmc2_list
 
 # Build the succinct de Bruijn graph and permute uncompresed color matrix accordingly
-$ cosmo-build -d ecoli6_kmc2_list
+cosmo-build -d ecoli6_kmc2_list
 
 # Run the reuse algorithm, the output will be the color file appended with .reuse
-$ cosmo-build -r ecoli6_kmc2_list.colors ecoli6_kmc2_list.dbg
+cosmo-build -r ecoli6_kmc2_list.colors ecoli6_kmc2_list.dbg
 ```
