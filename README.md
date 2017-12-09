@@ -1,4 +1,4 @@
-Rainbowfish Color Reuse
+# Rainbowfish Color Reuse
 
 This is a project for CIS6930 Big Data for Biological Applications.
 The project website is at https://cis6930.wixsite.com/group3 along with the relevant literature.
