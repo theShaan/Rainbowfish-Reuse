@@ -2,76 +2,89 @@
 #ifndef DUMMIES_HPP
 #define DUMMIES_HPP
 
+#include <boost/heap/priority_queue.hpp>
+#include <boost/heap/fibonacci_heap.hpp>
+#include <boost/variant.hpp>
+#include <parallel/algorithm>
 #include <boost/range/adaptor/transformed.hpp>     // Map function to inputs
+#include <boost/range/adaptors.hpp>
+#include <boost/range/adaptor/indexed.hpp>
 #include <boost/range/adaptor/uniqued.hpp>         // Uniquify
 #include <boost/range/algorithm/set_algorithm.hpp> // set_difference
 #include <boost/function_output_iterator.hpp>      // for capturing output of set_algorithms
+#include <boost/tuple/tuple.hpp>
+#include <boost/tuple/tuple_comparison.hpp>
+#include <boost/tuple/tuple_io.hpp>
+#include <algorithm>
 #include <utility>                                 // make_pair (for boost ranges)
 #include <functional>                              // function (to avoid errors with the lambdas)
 #include <cstring>                                 // memset
 
+#include "debug.hpp"
+#include "config.hpp"
 #include "kmer.hpp"
 
 using namespace boost::adaptors;
+using boost::get;
 
-enum edge_tag { standard, in_dummy, out_dummy };
+enum edge_tag { out_dummy, in_dummy, standard};
 
-template <typename kmer_t, typename OutputIterator>
-void find_incoming_dummy_edges(const kmer_t * table_a, const kmer_t * table_b, size_t num_kmers, uint32_t k, OutputIterator out) {
-  auto a_range = std::make_pair(table_a, table_a + num_kmers);
-  auto b_range = std::make_pair(table_b, table_b + num_kmers);
-  auto a_lam   = std::function<kmer_t(kmer_t)>([](kmer_t x) -> kmer_t {return get_start_node(x);});
+template <typename kmer_t>
+struct uniq {
+  kmer_t prev;
+  bool   first = true;
+
+  bool operator()( kmer_t x ) {
+    if (x == prev && !first) {
+      return false;
+    }
+    else {
+      prev = x;
+      first = false;
+      return true;
+    }
+  }
+};
+
+template <typename kmer_t, typename InputRange1, typename InputRange2, typename Func>
+void find_incoming_dummy_nodes(const InputRange1 a_range, const InputRange2 b_range, uint32_t k, Func out_f) {
+  //typedef decltype(*a_range.begin()) kmer_t;
+  //typedef typename OutputIterator::value_type pair_t;
+  size_t idx = 0;
+  kmer_t temp;
+  auto a_lam = std::function<kmer_t(kmer_t)>([&](kmer_t x) -> kmer_t {
+    temp = x;
+    return get_start_node(x);
+  });
   auto b_lam   = std::function<kmer_t(kmer_t)>([k](kmer_t x) -> kmer_t {return get_end_node(x,k);});
-  auto a = a_range | transformed(a_lam) | uniqued;
-  auto b = b_range | transformed(b_lam) | uniqued;
+  auto a = a_range | transformed(a_lam) | filtered(uniq<kmer_t>());
+  auto b = b_range | transformed(b_lam) | filtered(uniq<kmer_t>());
 
-  //auto out_count = boost::make_function_output_iterator(inc_count);
-  //boost::set_difference(a, b, out_count);
-  boost::set_difference(a, b, out);
+  auto pairer  = [&](kmer_t) { out_f(idx++, temp); };
+  auto paired_out = boost::make_function_output_iterator(pairer);
+  //std::set_difference(a_start, a.end(), b.begin(), b.end(), paired_out);
+  boost::set_difference(a, b, paired_out);
+  // GPU: http://thrust.github.io/doc/group__set__operations.html
+  //__gnu_parallel::set_difference(a.begin(), a.end(), b.begin(), b.end(), paired_out);
 }
 
-template <typename kmer_t>
-size_t count_incoming_dummy_edges(kmer_t * table_a, kmer_t * table_b, size_t num_kmers, uint32_t k) {
-  size_t count = 0;
+// TODO: use set_symmetric_difference with each wrapped with a tag that is ignored during the comparison
+// that way we can find both dummy types at same time
+template <typename kmer_t, typename InputRange1, typename InputRange2, typename Func>
+void find_outgoing_dummy_nodes(const InputRange1 a_range, const InputRange2 b_range, uint32_t k, Func out_f) {
+  kmer_t temp;
+  auto a_lam = std::function<kmer_t(kmer_t)>([](kmer_t x) -> kmer_t {
+    return get_start_node(x);
+  });
+  auto b_lam = std::function<kmer_t(kmer_t)>([&](kmer_t x) -> kmer_t {return get_end_node((temp = x),k);});
+  auto a = a_range | transformed(a_lam) | filtered(uniq<kmer_t>());
+  auto b = b_range | transformed(b_lam) | filtered(uniq<kmer_t>());
 
-  auto inc_count = [&count](kmer_t) {count++;};
-  // This is required because set_difference requires an output iterator :<
-  // Would be more self descriptive with a better pipeline lib
-  auto out_count = boost::make_function_output_iterator(inc_count);
-  find_incoming_dummy_edges(table_a, table_b, num_kmers, k, out_count);
-  return count;
-}
-
-inline void prepare_k_values(uint8_t * k_values, size_t num_dummies, uint32_t k) {
-  // first num_dummies are k, then it is k-1 down to 1 num_dummies times
-  memset(k_values, k, num_dummies);
-  uint8_t * new_k_values = k_values + num_dummies;
-  for (size_t i = 0; i < num_dummies * (k-1); i++) {
-    new_k_values[i] = k - (i % (k-1)) - 1;
-  }
-}
-
-template <typename kmer_t>
-void generate_dummies(kmer_t dummy_node, kmer_t * output, uint32_t k) {
-  // until k-1 because we need at least one symbol left
-  for (size_t i = 0; i < k-1; i++) {
-    // shift the width of 1 nucleotide. (We are storing the kmers in reverse order, so a shift left
-    // is a shift right when printed out)
-    // Yeah, maybe this should be in kmer's code and produce an iterator instead...
-    // but who has time to well-abstracted code when papers need publishing?
-    output[i] = dummy_node <<= NT_WIDTH;
-  }
-}
-
-template <typename kmer_t>
-void prepare_incoming_dummy_edges(kmer_t * dummy_nodes, uint8_t * k_values, size_t num_dummies, uint32_t k) {
-  // should be k * num_dummies space allocated for dummy_nodes and k_values
-  // loop over each dummy edge, and have a pointer for next, loop over k, write k and edge >> 2
-  kmer_t * output = dummy_nodes + num_dummies;
-  for (size_t i = 0; i < num_dummies; i++) {
-    generate_dummies(dummy_nodes[i], output + i * (k-1), k);
-  }
-  prepare_k_values(k_values, num_dummies, k);
+  auto pairer = [&](kmer_t) { out_f(temp); };
+  auto paired_out = boost::make_function_output_iterator(pairer);
+  boost::set_difference(b, a, paired_out);
+  // GPU: http://thrust.github.io/doc/group__set__operations.html
+  //__gnu_parallel::set_difference(a.begin(), a.end(), b.begin(), b.end(), paired_out);
 }
 
 template <class Visitor>
@@ -92,21 +105,19 @@ class Unique {
         _v(tag, x, k);
       }
       first_iter = false;
-      last_tag = tag;
-      last_kmer = x;
-      last_k = k;
-    };
+      last_tag   = tag;
+      last_kmer  = x;
+      last_k     = k;
+    }
 };
 
-template <class Visitor>
 class FirstStartNodeFlagger {
-  Visitor _v;
   uint32_t _graph_k;
 
   public:
-    FirstStartNodeFlagger(Visitor v, uint32_t k) : _v(v), _graph_k(k) {}
+    FirstStartNodeFlagger(uint32_t k) : _graph_k(k) {}
     template <typename kmer_t>
-    void operator()(edge_tag tag, const kmer_t & x, const uint32_t k) {
+    bool operator()(const kmer_t & x, const uint32_t k) {
       // Note: for multithreading, this might be dangerous? could make class members instead
       static uint32_t last_k = 0;
 
@@ -130,21 +141,20 @@ class FirstStartNodeFlagger {
       last_start_node  = this_start_node;
 #endif
 
-      _v(tag, x, k, result);
       last_k     = k;
+
+      return result;
     }
 };
 
-template <class Visitor>
 class FirstEndNodeFlagger {
-  Visitor  _v;
   uint32_t _graph_k;
   bool first_iter = true;
 
   public:
-    FirstEndNodeFlagger(Visitor v, uint32_t k) : _v(v), _graph_k(k) {}
+    FirstEndNodeFlagger(uint32_t k) : _graph_k(k) {}
     template <typename kmer_t>
-    void operator()(edge_tag tag, const kmer_t & x, const uint32_t k, uint32_t start_node_flag) {
+    bool operator()(edge_tag tag, const kmer_t & x, const uint32_t k) {
       static kmer_t last_suffix;
       static uint32_t last_k;
       static bool edge_seen[DNA_RADIX];
@@ -166,10 +176,10 @@ class FirstEndNodeFlagger {
         edge_seen[edge] = true;
       }
 
-      _v(tag, x, k, start_node_flag, edge_flag);
-
       last_suffix = this_suffix;
       last_k      = k;
+
+      return edge_flag;
     }
 };
 
@@ -178,98 +188,182 @@ auto uniquify(Visitor v) -> Unique<decltype(v)> {
   return Unique<decltype(v)>(v);
 }
 
-template <class Visitor>
-auto add_first_start_node_flag(Visitor v, uint32_t k) -> FirstStartNodeFlagger<decltype(v)> {
-  return FirstStartNodeFlagger<decltype(v)>(v, k);
+struct incrementer : boost::static_visitor<> {
+  template <typename T>
+  void operator()(T & t) const {
+    t->advance_begin(1);
+  }
+};
+
+struct is_empty2 : boost::static_visitor<bool> {
+  template <typename T>
+  bool operator()(T & t) const {
+    return t->empty();
+  }
+};
+
+template <typename R>
+struct fronter : boost::static_visitor<R> {
+  template <typename T>
+  R operator()(T t) const {
+    return (R)*(t->begin());
+  }
+};
+
+template <typename value_type, typename first_range, typename ... ranges>
+struct heap_item {
+  typedef heap_item<value_type, first_range, ranges...> this_type;
+  typedef boost::variant<first_range, ranges...> range_variant;
+  //typedef first_range:: value_type;
+  range_variant m_range;
+
+  typename boost::heap::fibonacci_heap<this_type>::handle_type handle;
+
+  //heap_item(range_variant r) : m_range(&r) {}
+  template <typename range>
+  heap_item(range r) : m_range(r) {}
+  //template <typename range>
+
+  // new incremented heap item
+  this_type & operator++() {
+    boost::apply_visitor(incrementer(), m_range);
+    return *this;
+  }
+
+  bool empty() const {
+    return boost::apply_visitor(is_empty2(), m_range);
+  }
+
+  value_type front() const {
+    const auto f = fronter<value_type>{};
+    return boost::apply_visitor(f, m_range);
+  }
+
+  friend bool operator<(const this_type & l, const this_type & r) {
+    // TODO : fix the comparison here (front() will return an element_t
+    // which is a tuple with record_t, this_k, dummy_tag
+    auto l_element = l.front();
+    auto l_record  = get<0>(l_element);
+    auto l_edge    = get<0>(l_record);
+    auto l_node    = get_start_node(l_edge);
+    auto l_k       = get<1>(l_element);
+    //auto l_tag     = get<2>(l_element);
+
+    auto r_element = r.front();
+    auto r_record  = get<0>(r_element);
+    auto r_edge    = get<0>(r_record);
+    auto r_node    = get_start_node(r_edge);
+    auto r_k       = get<1>(r_element);
+    //auto r_tag     = get<2>(r_element);
+
+    // compare nodes. If nodes are equal, compare length.
+    // if length is equal, return edge < edge
+    // else return length < length
+    // else return node < node
+    // swapped because we want min heap, but a heap defaults to max
+    if (r_node == l_node) {
+      if (r_k == l_k) {
+        return r_edge < l_edge;
+      }
+      else return (r_k < l_k);
+    }
+    else return (r_node < l_node);
+  }
+};
+
+template <typename InputRange1, typename InputRange2, typename InputRange3, class Visitor>
+void merge_dummies(const InputRange1 & a_range, const InputRange2 & o_range, const InputRange3 & i_range, uint8_t k, Visitor visit) {
+  typedef typename InputRange1::value_type record_t;
+  typedef typename InputRange2::value_type kmer_t;
+
+  size_t idx  = 0;
+  auto i_next = i_range.cbegin();
+  auto a = a_range | transformed([&](record_t x){
+    bool is_dummy = (i_next != i_range.cend()) && (idx == *(i_next));
+    return boost::make_tuple(x, is_dummy?in_dummy:standard);
+  });
+
+  auto o = o_range | transformed([](kmer_t x) {
+    return boost::make_tuple(record_t(x), out_dummy);
+  });
+
+  using boost::get;
+  auto v   = [&](auto x) {
+    if (get<1>(x) != out_dummy) {
+      ++idx;
+      if (get<1>(x) == in_dummy) ++i_next;
+    }
+    visit(boost::get<1>(x), boost::get<0>(x), k);
+  };
+  auto out = boost::make_function_output_iterator(v);
+  boost::set_union(a, o, out, [](boost::tuple<record_t, edge_tag> x,
+                                 boost::tuple<record_t, edge_tag> y){
+    return (get<0>(get<0>(x))<<2) < (get<0>(get<0>(y))<<2);
+  });
 }
 
-template <class Visitor>
-auto add_first_end_node_flag(Visitor v, uint32_t k) -> FirstEndNodeFlagger<decltype(v)> {
-  return FirstEndNodeFlagger<decltype(v)>(v, k);
-}
+// TODO: Try a parallell merge (and set difference) on the internal STXXL blocks
+template <typename InputRange1, typename InputRange2, typename InputRange3, class Visitor>
+void merge_dummies_with_shifts(const InputRange1 & a_range, const InputRange2 & o_range, const InputRange3 & i_range, const uint8_t k, Visitor visit) {
+  using namespace boost::heap;
+  typedef typename InputRange1::value_type record_t;
+  typedef boost::tuple<record_t, uint8_t, edge_tag> element_t;
 
-// Could be done cleaner: set_difference iterator as outgoing dummies, transform to have tuple with k value, merge + merge again iterator with comp functor.
-// but I think an extra set_difference indirection might make things slower (since we have to access outgoing dummies multiple times),
-// and this was already written and tested from an earlier C implementation.
-// Visitor functor takes 4 params: kmer, size, first flag, edge flag (could also just take kmer and size)
-// planned Visitor functors: ascii_full_edge, ascii_edge_only, binary (5 bits per row, x12 per 64 bit block, 4 bits waste per 12, or just per 8 bits at
-// first to make parsing easy)
-template <typename kmer_t, class Visitor>
-void merge_dummies(kmer_t * table_a, kmer_t * table_b, const size_t num_records, const uint32_t k,
-                   kmer_t * in_dummies, size_t num_incoming_dummies, uint8_t * dummy_lengths,
-                   Visitor visitor_f) {
-  // runtime speed: O(num_records) (since num_records >= num_incoming_dummies)
-  auto visit = uniquify(add_first_start_node_flag(add_first_end_node_flag(visitor_f, k),k));
+  auto a = a_range | transformed([k](auto x) {
+    return boost::make_tuple(x, k, standard);
+  });
 
-  #define get_a(i) (get_start_node(table_a[(i)]) >> 2)
-  #define get_b(i) (get_end_node(table_b[(i)], k) >> 2) // shifting to give dummy check call consistency
-  #define inc_b() while (b_idx < num_records && get_b(++b_idx) == b) {}
+  auto o = o_range | transformed([k](auto x) {
+    return boost::make_tuple(record_t(x), k, out_dummy);
+  });
 
-  // **Standard edges**: Table a (already sorted by colex(node), then edge).
-  // Table a May not be unique (if k is odd and had "palindromic" [in DNA sense] kmer in input)
-  // **Outgoing dummies**: {get_b} - {get_a} (the difference of the sets constructed by mapping get_a and get_b)
-  // (in the correct order, as B is sorted by last colex(row)).
-  // **Incoming Dummies**: in_dummies calculated previously {get_a} - {get_b}, sorted after adding shifts to produce all required $-prefixes
-  // e.g. {$acgt, $ccag} -> {$$$$a, $$$$a, $$$ac, $ccag, $$$cc, $$acg, $$cca, $acgt } [note $$$$a is repeated -> not unique]
-  size_t a_idx = 0, b_idx = 0, d_idx = 0;
+  auto i = i_range | transformed([](auto x) {
+    return boost::make_tuple(record_t(get<0>(x)), get<1>(x), in_dummy);
+  });
 
-  // Ew macros! I know, I know...
-  // (d<=s) because dummies should always sort before anything that is equal to them
-  // << 2 to compare node instead. Don't need to compare edge since already sorted
-  #define check_for_in_dummies(s) while (d_idx < num_incoming_dummies){ \
-    kmer_t d = in_dummies[d_idx]; \
-    uint8_t len  = dummy_lengths[d_idx]; \
-    if (d<<2 <= ((s)<<2)) { visit(in_dummy, d, len); ++d_idx; }\
-    else break; \
+  // Make sure queue can hold references to each variant of range
+  typedef heap_item<element_t, decltype(a)*, decltype(o)*, decltype(i)*> h_t;
+
+  // Make min-heap priority queue with elements being the lists
+  // uses boost::heap::fibonacci_heap for O(1) update of iterators
+  // (although it uses nodes, so the indirection might be slower for a small number of input files)
+  //fibonacci_heap<h_t> q;
+  //TODO: work out if using a fib heap is possible?
+  //typedef typename fibonacci_heap<h_t>::handle_type handle_t;
+  boost::heap::priority_queue<h_t> q;
+
+  // Add each range to queue
+  if(!a.empty()) {
+    q.push(h_t(&a));
+    //handle_t h = q.push(h_t(&a));
+    //(*h).handle = h;
+  }
+  if(!o.empty()) {
+    q.push(h_t(&o));
+    //handle_t h = q.push(h_t(&o));
+    //(*h).handle = h;
+  }
+  if(!i.empty()) {
+    q.push(h_t(&i));
+    //handle_t h = q.push(h_t(&i));
+    //(*h).handle = h;
   }
 
-  // set_difference loop with mixed-in merge (for in_dummies)
-  // visit each a in A, otherwise B if b < a and b not in A (so A U B-A)
-  // then print all remaining if either one is depleted
-  // at each print, visit all in_dummies < this
-  // visit(standard, table_a[a_idx++], k);
-  while (a_idx < num_records && b_idx < num_records) {
-    kmer_t x = table_a[a_idx];
-    kmer_t a = get_a(a_idx);
-    kmer_t b = get_b(b_idx);
-    // B - A -> dummy out
-    if (b < a) {
-      check_for_in_dummies(b);
-      visit(out_dummy, b, k);
-      inc_b();
-    }
-    // incoming dummy detection, but not the correct position, so just inc a-ptr
-    else if (a < b) {
-      check_for_in_dummies(x);
-      visit(standard, x, k);
-      ++a_idx;
-    }
-    else {
-      check_for_in_dummies(x);
-      visit(standard, x, k);
-      ++a_idx;
-      inc_b();
-    }
-  }
-
-  // Might have entries in a even if b is depleted (e.g. if all b < a)
-  while (a_idx < num_records) {
-    kmer_t x = table_a[a_idx++];
-    check_for_in_dummies(x);
-    visit(standard, x, k);
-  }
-
-  // Might have entries in b even if a is depleted
-  while (b_idx < num_records) {
-    kmer_t b = get_b(b_idx++);
-    check_for_in_dummies(b);
-    visit(out_dummy, b, k);
-  }
-
-  // Might have in-dummies remaining
-  while (d_idx < num_incoming_dummies) {
-    visit(in_dummy, in_dummies[d_idx], dummy_lengths[d_idx]);
-    ++d_idx;
+  while(!q.empty()) {
+    h_t input = q.top();
+    q.pop();
+    auto element = input.front();
+    auto record = get<0>(element);
+    auto this_k = get<1>(element);
+    auto tag    = get<2>(element);
+    visit(tag, record, this_k);
+    ++input;
+    // Fibonacci heaps let us update with O(1), so instead of popping
+    // and repushing, we only pop if its empty
+    // and signal that the next element in that node will have increased (in sorted order)
+    //if (input.empty()) q.pop();
+    //else q.increase(input.handle);
+    if (!input.empty()) q.push(input);
   }
 }
 
@@ -293,6 +387,5 @@ uint8_t get_f(edge_tag tag, const kmer_t & x, const uint32_t k) {
   }
   return sym+1;
 }
-
 
 #endif

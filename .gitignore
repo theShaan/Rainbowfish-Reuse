@@ -1,8 +1,25 @@
 # Project Executable
-cosmo-pack
 cosmo-build
 cosmo-assemble
+cosmo-color
 cosmo-benchmark
+cosmo-test
+
+# Compiling
+compiler_flags
+
+# STXXL
+.stxxl*
+
+# Logs
+*.*log
+
+# VIM
+*.swp
+*.swo
+
+# Personal workflow
+*.bak
 
 # Output files
 *.packed*
@@ -10,6 +27,7 @@ cosmo-benchmark
 *.lcs*
 *.qzd*
 *.gz
+*.rrr
 
 # Data
 *.fq
@@ -28,6 +46,8 @@ test_data/*
 # C stuff
 *.o
 *.dSYM
+gmon.out
+core
 
 # Python stuff
 .ipynb_checkpoints
