@@ -6,7 +6,7 @@ The project website is at https://cis6930.wixsite.com/group3 along with the rele
 
 ## Compilation Instructions
 The project is based on VARI, which can be found at : https://github.com/cosmo-team/cosmo/tree/VARI
-The 3rd party packages must be installed according to the instructions on the website.
+The 3rd party packages must be installed according to the instructions on the website. The instructions there, including handling errors, are recommended. 
 
 ```sh
 # Grab the code:
@@ -63,7 +63,7 @@ make
 
 ## Usage
 
-./cosmo-build <color_file> <de_bruijn_graph_file>
+./cosmo-build <color_file> <de_bruijn_graph_file> <no_of_colors>
 
 The output will <color_file>.reuse
 
@@ -87,5 +87,5 @@ ls -1 --color=no *.fna |xargs -l -i echo "{}_kmc_sorted_kmc.kmc" >ecoli6_kmc2_li
 cosmo-build -d ecoli6_kmc2_list
 
 # Run the reuse algorithm, the output will be the color file appended with .reuse
-cosmo-build -r ecoli6_kmc2_list.colors ecoli6_kmc2_list.dbg
+cosmo-build -r ecoli6_kmc2_list.colors ecoli6_kmc2_list.dbg 6
 ```
