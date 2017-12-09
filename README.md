@@ -13,7 +13,8 @@ The 3rd party packages must be installed according to the instructions on the we
 git clone https://github.com/theShaan/Rainbowfish-Reuse
 cd Rainbowfish-Reuse/
 
-#Follow the instructions on VARI to install the 3rd Party Dependencies, i.e. -
+#Follow the instructions on VARI to install the 3rd Party Dependencies. From the website -
+#Note: Change "/home/Shaan/git/test/cosmo" to wherever your cosmo working tree ends up.
 
 mkdir 3rd_party_src
 mkdir -p 3rd_party_inst/boost
@@ -32,13 +33,13 @@ cd boost_1_54_0
 cd ..
 
 cd sdsl-lite/
-/usr/bin/time sh install.sh /home/martin_muggli/git/test/cosmo/3rd_party_inst
+/usr/bin/time sh install.sh /home/Shaan/git/test/cosmo/3rd_party_inst
 cd ..
 
 cd stxxl
 mkdir build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/martin_muggli/git/test/cosmo/3rd_party_inst -DBUILD_STATIC_LIBS=ON
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/Shaan/git/test/cosmo/3rd_party_inst -DBUILD_STATIC_LIBS=ON
 make
 make install
 cd ../..
@@ -49,7 +50,7 @@ cd ..
 
 cd tclap/
 autoreconf -fvi
-./configure --prefix=/home/martin_muggli/git/test/cosmo/3rd_party_inst
+./configure --prefix=/home/Shaan/git/test/cosmo/3rd_party_inst
 make
 make install
 cd ..
