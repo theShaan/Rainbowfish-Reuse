@@ -61,6 +61,11 @@ make
 
 ```
 
+## Troubleshooting
+
+Note : VARI doesn't support later versions of Boost. To complile sucessfully, it is  necessary to use Boost 1.54 and update BOOST_PATH in the Makefile to reflect the installed directory. 
+We fixed additional problems by copying libboost_system.14.0.o and libboost_filesystem.1.54.0.o to /usr/lib/x86_64-linux-gnu/
+
 ## Usage
 
 ./cosmo-build -r <color_file> <de_bruijn_graph_file> <no_of_colors>
@@ -71,7 +76,7 @@ Example:
 
 To test the program on an ecoli sample run the following after compiling :
 
-### Colored de Bruijn graph example:
+### E.coli colored de Bruijn graph example:
 ```sh
 # Grab 6 E. coli assemblies:
 git clone https://github.com/theShaan/e_coli6
